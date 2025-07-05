@@ -58,6 +58,10 @@ kotlin {
             implementation(libs.bundles.about)
             implementation(libs.bytesize)
         }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlin.test.junit)
+        }
     }
 }
 
@@ -116,6 +120,25 @@ android {
         debugImplementation(compose.uiTooling)
         implementation(platform(sharedLibs.koin.bom))
         debugImplementation(libs.devtools)
+        
+        testImplementation(libs.junit)
+        testImplementation(libs.kotlin.test)
+        testImplementation(libs.kotlin.test.junit)
+        testImplementation(libs.kotlinx.coroutines.test)
+    }
+    
+    // Enable test output logging like npm/jest
+    tasks.withType<Test> {
+        testLogging {
+            events("passed", "skipped", "failed", "standardOut", "standardError")
+            showExceptions = true
+            showCauses = true
+            showStackTraces = true
+            showStandardStreams = true
+            
+            // Show individual test results
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
     }
 }
 
