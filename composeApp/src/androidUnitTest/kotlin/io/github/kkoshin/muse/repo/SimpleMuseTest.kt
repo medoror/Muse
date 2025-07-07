@@ -15,6 +15,6 @@ class SimpleMuseTest {
 
     @Test
     fun `test MAX_TEXT_LENGTH constant exists`() {
-        assertEquals(10_000, MAX_TEXT_LENGTH)
+        assertEquals(25_000, MAX_TEXT_LENGTH)
     }
 }

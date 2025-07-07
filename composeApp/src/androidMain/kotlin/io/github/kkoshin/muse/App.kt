@@ -11,9 +11,14 @@ import io.github.kkoshin.muse.dashboard.DashboardViewModel
 import io.github.kkoshin.muse.diagnosis.CrashLogActivity
 import io.github.kkoshin.muse.editor.EditorViewModel
 import io.github.kkoshin.muse.export.ExportViewModel
+import io.github.kkoshin.muse.AccountManager
 import io.github.kkoshin.muse.isolation.AudioIsolationProvider
 import io.github.kkoshin.muse.isolation.AudioIsolationViewModel
+import io.github.kkoshin.muse.repo.AndroidFileManager
+import io.github.kkoshin.muse.repo.FileManager
 import io.github.kkoshin.muse.repo.MuseRepo
+import io.github.kkoshin.muse.repo.ScriptDao
+import io.github.kkoshin.muse.repo.SqliteScriptDao
 import io.github.kkoshin.muse.tts.TTSManager
 import io.github.kkoshin.muse.tts.TTSProvider
 import io.github.kkoshin.muse.tts.vendor.ElevenLabProvider
@@ -31,7 +36,9 @@ import xcrash.XCrash
 
 class App : Application() {
     private val appModule = module {
-        singleOf(::MuseRepo)
+        single<FileManager> { AndroidFileManager(get()) }
+        single<ScriptDao> { SqliteScriptDao(get()) }
+        single { MuseRepo(get<ScriptDao>(), get<FileManager>()) }
         viewModelOf(::EditorViewModel)
         viewModel { ExportViewModel(get(), get(), get()) }
         viewModel { DashboardViewModel(get()) }

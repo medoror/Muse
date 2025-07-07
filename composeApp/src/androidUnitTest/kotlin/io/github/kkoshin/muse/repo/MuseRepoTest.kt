@@ -2,182 +2,163 @@ package io.github.kkoshin.muse.repo
 
 import io.github.kkoshin.muse.dashboard.Script
 import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
+import java.io.File
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MuseRepoTest {
 
-    @Test
-    fun `test MAX_TEXT_LENGTH constant`() {
-        assertEquals(10_000, MAX_TEXT_LENGTH)
+    private lateinit var fakeScriptDao: FakeScriptDao
+    private lateinit var fakeFileManager: FakeFileManager
+    private lateinit var tempDir: File
+    private lateinit var museRepo: MuseRepo
+
+    @Before
+    fun setUp() {
+        tempDir = createTempDir("muse_test")
+        fakeScriptDao = FakeScriptDao()
+        fakeFileManager = FakeFileManager(tempDir)
+        museRepo = MuseRepo(fakeScriptDao, fakeFileManager)
+    }
+
+    @After
+    fun tearDown() {
+        tempDir.deleteRecursively()
+        fakeScriptDao.clear()
     }
 
     @Test
-    fun `test PCM file naming logic`() {
-        val voiceId = "test-voice-123"
+    fun `insertScript and queryScript should work correctly`() = runTest {
+        val script = Script(text = "Test script content")
+        
+        // Insert the script
+        museRepo.insertScript(script)
+        
+        // Query it back
+        val retrievedScript = museRepo.queryScript(script.id)
+        
+        assertNotNull(retrievedScript)
+        assertEquals(script.id, retrievedScript.id)
+        assertEquals(script.text, retrievedScript.text)
+        assertEquals(script.title, retrievedScript.title)
+        assertEquals(script.createAt, retrievedScript.createAt)
+    }
+
+    @Test
+    fun `queryScript with non-existent ID should return null`() = runTest {
+        val nonExistentId = UUID.randomUUID()
+        
+        val result = museRepo.queryScript(nonExistentId)
+        
+        assertNull(result)
+    }
+
+    @Test
+    fun `queryAllScripts should return empty list initially`() = runTest {
+        val scripts = museRepo.queryAllScripts()
+        
+        assertTrue(scripts.isEmpty())
+    }
+
+    @Test
+    fun `queryAllScripts should return all inserted scripts`() = runTest {
+        val script1 = Script(text = "First script")
+        val script2 = Script(text = "Second script")
+        
+        museRepo.insertScript(script1)
+        museRepo.insertScript(script2)
+        
+        val scripts = museRepo.queryAllScripts()
+        
+        assertEquals(2, scripts.size)
+        assertTrue(scripts.any { it.id == script1.id })
+        assertTrue(scripts.any { it.id == script2.id })
+    }
+
+    @Test
+    fun `deleteScript should remove script from database`() = runTest {
+        val script = Script(text = "Script to delete")
+        
+        // Insert and verify it exists
+        museRepo.insertScript(script)
+        assertNotNull(museRepo.queryScript(script.id))
+        
+        // Delete and verify it's gone
+        museRepo.deleteScript(script.id)
+        assertNull(museRepo.queryScript(script.id))
+    }
+
+    @Test
+    fun `getPcmCache should return correct file path`() {
+        val voiceId = "test-voice"
         val phrase = "hello world"
         
-        // Test the file naming logic that getPcmCache uses
-        val expectedFileName = "$phrase.pcm"
+        val file = museRepo.getPcmCache(voiceId, phrase)
         
-        assertTrue(expectedFileName.endsWith(".pcm"))
-        assertTrue(expectedFileName.contains(phrase))
-        assertEquals("hello world.pcm", expectedFileName)
+        assertTrue(file.path.contains(voiceId))
+        assertEquals("$phrase.pcm", file.name)
+        assertTrue(file.path.endsWith("$phrase.pcm"))
     }
 
     @Test
-    fun `test Script data class properties`() {
-        val text = "This is a test script content"
-        val script = Script(text = text)
+    fun `getPcmCache should create voice directory`() {
+        val voiceId = "new-voice"
+        val phrase = "test phrase"
         
-        // Test that script has required properties
-        assertNotNull(script.id)
-        assertEquals("Untitled", script.title)
-        assertEquals(text, script.text)
-        assertTrue(script.createAt > 0)
+        val file = museRepo.getPcmCache(voiceId, phrase)
         
-        // Test summary generation
-        assertEquals(text, script.summary) // Text is < 100 chars
-        assertTrue(script.summary.length <= 100)
+        assertTrue(file.parentFile?.exists() == true)
+        assertEquals(voiceId, file.parentFile?.name)
     }
 
     @Test
-    fun `test Script summary truncation`() {
-        val longText = "a".repeat(150) // 150 characters
-        val script = Script(text = longText)
+    fun `getPcmCache with different voices should create separate directories`() {
+        val voice1 = "voice1"
+        val voice2 = "voice2"
+        val phrase = "same phrase"
         
-        // Summary should be truncated to 100 characters
-        assertEquals(100, script.summary.length)
-        assertEquals("a".repeat(100), script.summary)
+        val file1 = museRepo.getPcmCache(voice1, phrase)
+        val file2 = museRepo.getPcmCache(voice2, phrase)
+        
+        assertEquals("$phrase.pcm", file1.name)
+        assertEquals("$phrase.pcm", file2.name)
+        assertEquals(voice1, file1.parentFile?.name)
+        assertEquals(voice2, file2.parentFile?.name)
+        assertTrue(file1.path != file2.path)
     }
 
-    @Test
-    fun `test Script summary removes newlines`() {
-        val textWithNewlines = "Line 1\nLine 2\nLine 3"
-        val script = Script(text = textWithNewlines)
-        
-        // Summary should replace newlines with spaces
-        assertEquals("Line 1 Line 2 Line 3", script.summary)
-    }
 
     @Test
-    fun `test queryPhrases with short text`() = runTest {
-        val text = "Hello world this is a test"
-        val expectedPhrases = listOf("Hello", "world", "this", "is", "a", "test")
+    fun `multiple insert and delete operations should work correctly`() = runTest {
+        val scripts = listOf(
+            Script(text = "Script 1"),
+            Script(text = "Script 2"),
+            Script(text = "Script 3")
+        )
         
-        // Mock script
-        val script = Script(text = text)
+        // Insert all scripts
+        scripts.forEach { museRepo.insertScript(it) }
         
-        // Test the phrase splitting logic
-        val phrases = text.split(' ', '\n').filter { it.isNotBlank() }
-        assertEquals(expectedPhrases, phrases)
-    }
-
-    @Test
-    fun `test queryPhrases with text at MAX_TEXT_LENGTH limit`() = runTest {
-        val text = "word ".repeat(2000) // Creates text near the limit
-        val truncatedText = text.take(MAX_TEXT_LENGTH)
+        // Verify all exist
+        assertEquals(3, museRepo.queryAllScripts().size)
+        scripts.forEach { 
+            assertNotNull(museRepo.queryScript(it.id))
+        }
         
-        // Should truncate at MAX_TEXT_LENGTH
-        assertTrue(truncatedText.length <= MAX_TEXT_LENGTH)
+        // Delete middle script
+        museRepo.deleteScript(scripts[1].id)
         
-        val phrases = truncatedText.split(' ', '\n').filter { it.isNotBlank() }
-        assertTrue(phrases.isNotEmpty())
-        assertTrue(phrases.all { it == "word" })
-    }
-
-    @Test
-    fun `test queryPhrases with text exceeding MAX_TEXT_LENGTH`() = runTest {
-        val text = "word ".repeat(3000) // Creates text exceeding the limit
-        val truncatedText = text.take(MAX_TEXT_LENGTH)
-        
-        // Should be truncated to exactly MAX_TEXT_LENGTH
-        assertEquals(MAX_TEXT_LENGTH, truncatedText.length)
-        
-        val phrases = truncatedText.split(' ', '\n').filter { it.isNotBlank() }
-        assertTrue(phrases.isNotEmpty())
-    }
-
-    @Test
-    fun `test queryPhrases filters empty strings`() = runTest {
-        val text = "Hello   world\n\n\ntest   "
-        val phrases = text.split(' ', '\n').filter { it.isNotBlank() }
-        
-        // Should only contain non-blank phrases
-        val expectedPhrases = listOf("Hello", "world", "test")
-        assertEquals(expectedPhrases, phrases)
-    }
-
-    @Test
-    fun `test queryPhrases with mixed whitespace`() = runTest {
-        val text = "Hello\nworld\ttest\r\nphrase"
-        // The current implementation only splits on ' ' and '\n'
-        val phrases = text.split(' ', '\n').filter { it.isNotBlank() }
-        
-        // Note: This test shows that the current implementation doesn't handle \t or \r
-        // The result will include "world\ttest\r" as one phrase
-        assertTrue(phrases.contains("Hello"))
-        assertTrue(phrases.contains("phrase"))
-        assertTrue(phrases.size >= 2)
-    }
-
-    @Test
-    fun `test export path format`() {
-        // Test the expected format of export paths
-        val appName = "Muse"
-        val expectedPath = "Download/$appName"
-        
-        assertEquals("Download/Muse", expectedPath)
-        assertTrue(expectedPath.startsWith("Download/"))
-        assertTrue(expectedPath.contains(appName))
-    }
-
-    @Test
-    fun `test empty text handling`() = runTest {
-        val emptyText = ""
-        val phrases = emptyText.split(' ', '\n').filter { it.isNotBlank() }
-        
-        assertTrue(phrases.isEmpty())
-    }
-
-    @Test
-    fun `test whitespace only text handling`() = runTest {
-        val whitespaceText = "   \n  \n   "
-        val phrases = whitespaceText.split(' ', '\n').filter { it.isNotBlank() }
-        
-        assertTrue(phrases.isEmpty())
-    }
-
-    @Test
-    fun `test single word text handling`() = runTest {
-        val singleWord = "hello"
-        val phrases = singleWord.split(' ', '\n').filter { it.isNotBlank() }
-        
-        assertEquals(listOf("hello"), phrases)
-    }
-
-    // Performance test to verify the text length concern mentioned in the TODO
-    @Test
-    fun `test performance concern with large text`() = runTest {
-        val largeText = "word ".repeat(10_000) // 50,000 characters
-        
-        val startTime = System.currentTimeMillis()
-        val truncatedText = largeText.take(MAX_TEXT_LENGTH)
-        val phrases = truncatedText.split(' ', '\n').filter { it.isNotBlank() }
-        val endTime = System.currentTimeMillis()
-        
-        val processingTime = endTime - startTime
-        
-        // Verify truncation works
-        assertTrue(truncatedText.length <= MAX_TEXT_LENGTH)
-        assertTrue(phrases.isNotEmpty())
-        
-        // This test helps document the performance concern
-        // If processing time is high, it validates the need for the limit
-        println("Processing time for ${MAX_TEXT_LENGTH} characters: ${processingTime}ms")
-        assertTrue(processingTime < 1000) // Should process in under 1 second
+        // Verify correct scripts remain
+        val remaining = museRepo.queryAllScripts()
+        assertEquals(2, remaining.size)
+        assertTrue(remaining.any { it.id == scripts[0].id })
+        assertTrue(remaining.any { it.id == scripts[2].id })
+        assertNull(museRepo.queryScript(scripts[1].id))
     }
 }

@@ -125,6 +125,8 @@ android {
         testImplementation(libs.kotlin.test)
         testImplementation(libs.kotlin.test.junit)
         testImplementation(libs.kotlinx.coroutines.test)
+        testImplementation(libs.sql.jvm)
+        testImplementation(libs.robolectric)
     }
     
     // Enable test output logging like npm/jest
